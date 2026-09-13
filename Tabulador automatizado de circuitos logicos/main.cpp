@@ -7,6 +7,7 @@
 
 using namespace std;
 
+//função que recebe um numero em string e retorna ele convertido em int
 int string_to_int(string s){
 
     int num = 0;
@@ -19,9 +20,8 @@ int string_to_int(string s){
 
 }
 
-
 int main(){
-    
+    // ===================================== etapa 1: ler o arquivo de texto e identificar as variaveis =======================
     int numVariaveis = 0;
     int numCasos = 0;
     unordered_map<char,int> Mvariaveis;
@@ -46,7 +46,7 @@ int main(){
 
     cout << "expressao: " << expressao << endl;
 
-    cout << "numero de casos: " << numCasos << endl; // imprimido a expressão na tela
+    cout << "numero de casos: " << numCasos << endl;
 
     cout << endl;
 
@@ -55,7 +55,7 @@ int main(){
 
         if((expressao[i] > 64 && expressao[i] < 91) || (expressao[i] > 96 && expressao[i] < 123)){
             
-            if(Mvariaveis.find(expressao[i]) == Mvariaveis.end()){
+            if(Mvariaveis.find(expressao[i]) == Mvariaveis.end()){ //caso variavel ainda nao tenha sido vista, adiciona ela no map e vector
                 Mvariaveis.insert({expressao[i],numVariaveis});
                 Vvariaveis.push_back(expressao[i]);
                 numVariaveis++;
@@ -80,10 +80,55 @@ int main(){
     
     cout << endl;
     cout << "quantidade de variaveis encontradas: " << numVariaveis << endl;
+    cout << endl;
 
-    
 
+    // ===================================== etapa 2: identificar casos de teste e guardá-los em uma estrutura =======================
     
+    cout << "======Casos======" <<  endl;
+
+    //definindo estrutura do caso de teste
+    typedef struct{
+
+        vector<int> variaveis;
+        int resultado; 
+
+    }casot;
+
+    casot caso;
+
+    getline(f,cl); //linha contendo apenas um /n
+
+    for(int i = 0 ; i < numCasos ; i++){
+
+        getline(f,cl); //linha contendo o caso de teste
+        int cont = 0;
+
+        while(cl[cont] != '|'){
+            if(cl[cont] == '1' || cl[cont] == '0'){
+                
+                caso.variaveis.push_back((int) (cl[cont]-'0')); //colocando os valores do txt em ordem no vector e resultado do caso
+            
+            }
+
+             cont++;
+        }
+
+        caso.resultado = (int) (cl[cont+2]-'0');
+
+
+        //imprimindo o caso atual na tela
+        cout << "caso: ";
+
+        for(auto v : caso.variaveis){
+            cout << v << " , ";
+        }
+        cout << " | " << caso.resultado << endl; 
+        caso.variaveis.clear();
+    }
+    
+    // ===================================== etapa 3: construir a arvore da expressão =======================
+    //...
 
     f.close(); //fechando o arquivo de texto
     return 0;
