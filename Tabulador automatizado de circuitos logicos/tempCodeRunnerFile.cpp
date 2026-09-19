@@ -1,1 +1,1 @@
-variaveis[i]
+#include <bits/stdc++.h>
