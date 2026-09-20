@@ -5,11 +5,62 @@
 #include <unordered_map>
 #include <vector>
 #include <queue>
+#include <bitset> //biblioteca pra transformar um inteiro em binario
+
 #include "BT.h"
+
+#define txt "./exemplos/teste_normal_3000.txt"
+
 
 #include <windows.h>
 
 using namespace std;
+
+
+/*
+
+Atividade de computação paralela:
+
+Quais são as principais etapas do algoritmo?
+
+O algoritmo é dividido em 4 grandes etapas:
+
+etapa 1: Leitura do arquivo txt, armazenando a expressão em uma string, o numero de casos em um int, as variaveis em um map e vector e o numero de variáveis em um int (99% de chance de ser seção crítica).
+
+etapa 2: Construção da arvore. Depende somente de saber a expressão que está na string. Monta um parser com os dados da expressão e coloca eles na arvore (possível seção crítica)
+
+etapa 3: Cada caso de teste é inserido na arvore e compara o resultado com o fornecido no arquivo txt para aquele caso. Caso esteja certo, acrescenta 1 na variavel de acertos, caso esteja errado acrescenta 1 na variavel de erros. (seção com melhor possibilidade de paralelismo, podemos dividir todos os casos entre os processadores, já que eles são indepedentes entre si, e a unica coisa que precisa ser compartilhada são as variaveis de acerto e erro)
+
+etapa 4: Apresentar os resultados na tela, com a porcentagem de acerto. (sem possibilidade de paralelização)
+
+O paralelismo será de dados, de tarefas ou híbrido?
+
+Uma vez que os casos de testes são armazenados em uma única variável, que é sobrescrita para cada novo caso, o paralelismo será de tarefas. O número total de casos de teste será dividido entre os núcleos.
+
+Qual parte pode ser executada simultaneamente?
+
+????
+
+Como o trabalho será dividido entre threads e processos?
+
+????
+
+Quais etapas ou dados possuem dependências?
+
+A etapa 2 tem dependência da etapa 1. A etapa 3 tem dependência das etapas 1 e 2. A etapa 4 depende de todas as outras.
+
+Existe risco de condição de corrida? Desenvolva
+
+Sim, por mais que os testes dos casos de teste seja independentes, o resultado do teste deve incrementar a variavel de acertos ou erros. Assim, a condição de corrida existe para as variáveis de acertos e erros.
+
+Será necessário sincronizar ou combinar resultados?
+
+Sim, no mesmo caso citado acima.
+
+*/
+
+
+
 
 //função que recebe um numero em string e retorna ele convertido em int
 int string_to_int(string s){
@@ -17,7 +68,7 @@ int string_to_int(string s){
     int num = 0;
     
     for(int i = 0 ; i < s.size() ; i++){
-        num = num + ((int) (s[i] - '0') * pow(10,(s.size()-1) - i));
+        num = num * 10 + (s[i] - '0');
     }
  
     return num;
@@ -137,7 +188,7 @@ int percorreArvore(cel* no,vector<int> variaveis, unordered_map<char,int> Mvaria
 int main(){
     SetConsoleOutputCP(CP_UTF8); //definindo UTF8 para conseguir alguns caracteres especiais
     
-    
+   
     // ===================================== etapa 1: ler o arquivo de texto e identificar as variaveis =======================
     
     int numVariaveis = 0;
@@ -145,21 +196,25 @@ int main(){
     unordered_map<char,int> Mvariaveis;
     vector<char> Vvariaveis;
 
-    ifstream f("teste.txt"); //tenta abrir arquivo
-    
-    if(!f.is_open()){ //dá erro caso nao consiga abrir
+    ifstream f(txt); //tenta abrir arquivo
+    ifstream teste(txt); //segunda instancia do arquivo txt só pra checar se entra no modo de tabela verdade ou nao. É fechado depois de conferir
+
+    if(!f.is_open() || !teste.is_open()){ //dá erro caso nao consiga abrir
         printf("erro abrindo o arquivo txt");
         return 0;
     }
 
     string cl; //string pra armazenar a linha atual (current line)
+    string cl2;
 
     getline(f,cl); //pegando a primeira linha (usos subsequentes semprem pegam a linha debaixo)
+    getline(teste,cl2);
 
     string expressao;
     expressao = cl; //armazenando expressao
 
     getline(f,cl);
+    getline(teste,cl2);
     numCasos = string_to_int(cl); //armazenando numero de casos
 
     cout << "expressao: " << expressao << endl;
@@ -204,16 +259,20 @@ int main(){
     // ===================================== etapa 3: construir a arvore da expressão =======================
     
   
-    cout << endl << "shuttingYard: " << endl << endl;
+    cout << endl << "shuttingYard: ";
     queue<char> posFixa;
     posFixa = shuttingYard(expressao);
 
-    /*while(!posFixa.empty()){   //imprime a Shutting Yard
+    int tamanhoFila = posFixa.size();
 
+    for(int i = 0 ; i < tamanhoFila ; i++){
         cout << posFixa.front() << " ";
+        posFixa.push(posFixa.front());
         posFixa.pop();
-    }*/
+    }
 
+    cout << endl << endl;
+    cout << "=========== Árvore formada ==========" << endl << endl;
     arvore* a1 = fazerArvore(posFixa);
 
     imprimir_arvore(a1->raiz);
@@ -226,7 +285,7 @@ int main(){
     int erros = 0;
 
 
-    cout << "======Casos======" <<  endl;
+    cout << "======Casos======" <<  endl << endl;
 
     //definindo estrutura do caso de teste
     typedef struct{
@@ -239,50 +298,111 @@ int main(){
     casot caso;
 
     getline(f,cl); //linha contendo apenas um /n
+    getline(teste,cl2);
+    
+    
+    int ModoMegaBrain = 0; //se for positivo significa que tenho que fazer a tabela verdade inteira
+    
+    streampos PosicaoAntiga;
 
-    for(int i = 0 ; i < numCasos ; i++){
+    getline(teste,cl2);
+    
+    int res = cl2.find('|');
 
-        getline(f,cl); //linha contendo o caso de teste
-        int cont = 0;
-
-        while(cl[cont] != '|'){
-            if(cl[cont] == '1' || cl[cont] == '0'){
-                
-                caso.variaveis.push_back((int) (cl[cont]-'0')); //colocando os valores do txt em ordem no vector e resultado do caso
-            
-            }
-
-             cont++;
-        }
-
-        caso.resultado = (int) (cl[cont+2]-'0');
-
-
-        //imprimindo o caso atual na tela
-        cout << "caso: ";
-
-        for(auto v : caso.variaveis){
-            cout << v << " , ";
-        }
-        cout << " | " << caso.resultado << endl;
-
-
-        
-        //aqui eu preciso percorrer a arvore e verificar se o resultado esta certo
-        int resultadoReal = percorreArvore(a1->raiz,caso.variaveis,Mvariaveis);
-
-        cout << endl << "resultado real: " << resultadoReal << endl << endl;
-        
-        if(caso.resultado == resultadoReal){
-            acertos++;
-        }
-        else{
-            erros++;
-        }
-
-        caso.variaveis.clear();//limpando o vetor de variaveis para colocar as variaveis do proximo caso
+    if(res == string::npos){  //isso nao funciona, qual a lógica por tras?
+        ModoMegaBrain = 1;
     }
     
+    teste.close();
+    
+
+    if(!ModoMegaBrain){
+
+
+        for(int i = 0 ; i < numCasos ; i++){
+    
+            getline(f,cl); //linha contendo o caso de teste
+            int cont = 0;
+    
+            while(cl[cont] != '|'){
+                if(cl[cont] == '1' || cl[cont] == '0'){
+                    
+                    caso.variaveis.push_back((int) (cl[cont]-'0')); //colocando os valores do txt em ordem no vector e resultado do caso
+                
+                }
+    
+                 cont++;
+            }
+    
+            caso.resultado = (int) (cl[cont+2]-'0');
+    
+    
+            //imprimindo o caso atual na tela
+            cout << "caso: ";
+    
+            for(auto v : caso.variaveis){
+                cout << v << " , ";
+            }
+            cout << " | " << caso.resultado << endl;
+    
+    
+            
+            //aqui eu preciso percorrer a arvore e verificar se o resultado esta certo
+            int resultadoReal = percorreArvore(a1->raiz,caso.variaveis,Mvariaveis);
+    
+            cout << endl << "resultado real: " << resultadoReal << endl << endl;
+            
+            if(caso.resultado == resultadoReal){
+                acertos++;
+            }
+            else{
+                erros++;
+            }
+    
+            caso.variaveis.clear();//limpando o vetor de variaveis para colocar as variaveis do proximo caso
+        }
+
+    }
+    if(ModoMegaBrain){ //modo de montagem de tabela verdade
+
+       cout << "====== Mega Brain ======" <<  endl << endl;
+       
+        numCasos = pow(2,numVariaveis);
+
+       for(int i = 0 ; i < pow(2,numVariaveis) ; i++){
+            
+            getline(f,cl);
+            caso.resultado = cl[0]-'0';
+
+            for(int j = 0 ; j < numVariaveis ; j++){ // pegando o numero em binario e dividindo os bits para todas as variaveis usando mascaramento
+
+                caso.variaveis.push_back((i >> (numVariaveis-1-j) & 1));
+                cout << "  " << caso.variaveis[j];
+            
+            }
+            cout << " | " << caso.resultado;
+
+            // com as variaveis com seus respectivos valores, percorro a arvore e trago o resultado pra ver se o usuario acertou ou nao
+            int resultadoReal = percorreArvore(a1->raiz,caso.variaveis,Mvariaveis);
+    
+            cout << endl << "resultado real: " << resultadoReal << endl << endl;
+            
+            if(caso.resultado == resultadoReal){
+                acertos++;
+            }
+            else{
+                erros++;
+            }
+
+
+            cout << endl;
+            caso.variaveis.clear();//limpando o vetor de variaveis para colocar as variaveis do proximo caso
+       }
+
+    }
+
+    // ===================================== etapa 4: Mostrar resultados na tela =======================
+
     float porcentagem = (float) acertos/numCasos;
 
     cout << endl << endl;
@@ -290,6 +410,7 @@ int main(){
     cout << "acertos: " << acertos << endl;
     cout << "erros: " << erros << endl;
     cout << "numero de casos: " << numCasos << endl;
+    cout << fixed << setprecision(2);
     cout << "porcentagem de acertos: " << porcentagem * 100 << "%" <<  endl << endl;
 
     f.close(); //fechando o arquivo de texto
