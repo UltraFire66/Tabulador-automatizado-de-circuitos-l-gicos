@@ -6,10 +6,10 @@
 #include <vector>
 #include <queue>
 #include <bitset> //biblioteca pra transformar um inteiro em binario
-
+#include <chrono>  // para usar o relogio
 #include "BT.h"
 
-#define txt "./exemplos/teste_normal_3000.txt"
+#define txt "./exemplos/mega_brain_atomico.txt"
 
 
 #include <windows.h>
@@ -59,18 +59,439 @@ Sim, no mesmo caso citado acima.
 
 */
 
+// ============================================================
+// FUNÇÕES AUXILIARES PARA VALIDAÇÃO DO ARQUIVO
+// ============================================================
 
+// Remove espaços em branco no início e no final de uma string.
+string trim(string s) {
+
+    size_t inicio = s.find_first_not_of(" \t\r\n");
+
+    if (inicio == string::npos)
+        return "";
+
+    size_t fim = s.find_last_not_of(" \t\r\n");
+
+    return s.substr(inicio, fim - inicio + 1);
+}
+
+
+// ============================================================
+// VALIDAÇÃO DA EXPRESSÃO LÓGICA
+// ============================================================
+
+class ValidadorExpressao {
+
+private:
+
+    string expressao;
+    size_t posicao = 0;
+
+public:
+    set<char> variaveis;
+
+    ValidadorExpressao(string e) {
+        expressao = e;
+    }
+
+    void ignorarEspacos() {
+        while (posicao < expressao.size() &&
+               isspace((unsigned char)expressao[posicao])) {
+            posicao++;
+        }
+    }
+
+    bool expressaoLogica() {
+        if (!operando())
+            return false;
+
+        ignorarEspacos();
+        while (posicao < expressao.size()) {
+            char c = expressao[posicao];
+
+            if (c == '+' || c == '.') {
+                posicao++;
+
+                if (!operando())
+                    return false;
+            } else{
+                break;
+            }
+            ignorarEspacos();
+        }
+        return true;
+    }
+
+    bool operando() {
+        ignorarEspacos();
+        if (posicao >= expressao.size())
+            return false;
+
+        char c = expressao[posicao];
+
+        // Operador NOT
+        if (c == '!') {
+            posicao++;
+            return operando();
+        }
+
+        // Expressão entre parênteses
+        if (c == '(') {
+            posicao++;
+
+            if (!expressaoLogica())
+                return false;
+            ignorarEspacos();
+
+            if (posicao >= expressao.size() ||
+                expressao[posicao] != ')') {
+                return false;
+            }
+
+            posicao++;
+            return true;
+        }
+
+        // Variáveis: letras maiúsculas ou minúsculas
+        if (isalpha((unsigned char)c)) {
+            variaveis.insert(c);
+            posicao++;
+            return true;
+        }
+        return false;
+    }
+
+    bool validar() {
+        ignorarEspacos();
+        if (!expressaoLogica())
+            return false;
+        ignorarEspacos();
+        // Não pode haver caracteres restantes.
+        return posicao == expressao.size();
+    }
+};
+
+// ============================================================
+// VALIDAÇÃO DO NÚMERO DE CASOS
+// ============================================================
+
+bool validarNumeroCasos(string linha, int &numero) {
+    linha = trim(linha);
+    if (linha.empty())
+        return false;
+
+    // Aceita somente números inteiros positivos.
+    for (char c : linha) {
+
+        if (!isdigit((unsigned char)c))
+            return false;
+    }
+
+    try {
+
+        long long valor = stoll(linha);
+
+        if (valor <= 0 || valor > INT_MAX)
+            return false;
+
+        numero = (int)valor;
+
+    }
+    catch (...) {
+
+        return false;
+    }
+
+    return true;
+}
+
+
+// ============================================================
+// VALIDAÇÃO DE UM CASO CONVENCIONAL
+// ============================================================
+
+bool validarCaso(string linha, int numVariaveis, int numeroLinha) {
+
+    linha = trim(linha);
+
+    if (linha.empty()) {
+
+        cerr << "Erro na linha " << numeroLinha
+             << ": linha vazia." << endl;
+
+        return false;
+    }
+
+    // Deve existir exatamente um separador '|'.
+    size_t separador = linha.find('|');
+
+    if (separador == string::npos ||
+        linha.find('|', separador + 1) != string::npos) {
+
+        cerr << "Erro na linha " << numeroLinha
+             << ": separador '|' ausente ou duplicado." << endl;
+
+        return false;
+    }
+
+    string valores = trim(linha.substr(0, separador));
+    string resultado = trim(linha.substr(separador + 1));
+
+    // Impede vírgulas no início, no final ou valores ausentes.
+    if (valores.empty() ||
+        valores.front() == ',' ||
+        valores.back() == ',') {
+
+        cerr << "Erro na linha " << numeroLinha
+            << ": separacao incorreta entre variaveis."
+            << endl;
+
+        return false;
+    }
+
+    // Verifica o resultado esperado.
+    if (resultado != "0" && resultado != "1") {
+
+        cerr << "Erro na linha " << numeroLinha
+             << ": resultado deve ser 0 ou 1." << endl;
+
+        return false;
+    }
+
+    // Separa os valores das variáveis pelas vírgulas.
+    stringstream ss(valores);
+
+    string valor;
+    int quantidade = 0;
+
+    while (getline(ss, valor, ',')) {
+
+        valor = trim(valor);
+
+        // Cada variável deve possuir exatamente um dígito.
+        if (valor != "0" && valor != "1") {
+
+            cerr << "Erro na linha " << numeroLinha
+                 << ": valor de variavel invalido: '"
+                 << valor << "'. Utilize somente 0 ou 1."
+                 << endl;
+
+            return false;
+        }
+
+        quantidade++;
+    }
+
+    // Verifica se a quantidade de valores está correta.
+    if (quantidade != numVariaveis) {
+
+        cerr << "Erro na linha " << numeroLinha
+             << ": quantidade incorreta de variaveis. Esperado: "
+             << numVariaveis << ", encontrado: "
+             << quantidade << "." << endl;
+
+        return false;
+    }
+
+    return true;
+}
+
+
+// ============================================================
+// VALIDAÇÃO DO ARQUIVO COMPLETO
+// ============================================================
+
+bool validarArquivo(string caminho) {
+
+    ifstream arquivo(caminho);
+
+    if (!arquivo.is_open()) {
+
+        cerr << "Erro: nao foi possivel abrir o arquivo."
+             << endl;
+
+        return false;
+    }
+
+    vector<string> linhas;
+    string linha;
+
+    // Lê todas as linhas sem alterar o arquivo original.
+    while (getline(arquivo, linha)) {
+
+        linhas.push_back(linha);
+    }
+
+    arquivo.close();
+
+    // Verifica se existem pelo menos as três linhas iniciais.
+    if (linhas.size() < 3) {
+
+        cerr << "Erro: arquivo incompleto." << endl;
+
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 1. Validação da expressão
+    // --------------------------------------------------------
+
+    ValidadorExpressao validador(linhas[0]);
+
+    if (!validador.validar()) {
+
+        cerr << "Erro na linha 1: expressao logica invalida."
+             << endl;
+
+        cerr << "Verifique os operadores, operandos e parenteses."
+             << endl;
+
+        return false;
+    }
+
+    int numVariaveis = validador.variaveis.size();
+
+    if (numVariaveis == 0) {
+
+        cerr << "Erro: a expressao nao possui variaveis."
+             << endl;
+
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 2. Validação do número de casos
+    // --------------------------------------------------------
+
+    int numCasosDeclarados;
+
+    if (!validarNumeroCasos(linhas[1], numCasosDeclarados)) {
+
+        cerr << "Erro na linha 2: numero de casos invalido."
+             << endl;
+
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 3. Validação da linha separadora
+    // --------------------------------------------------------
+
+    if (!trim(linhas[2]).empty()) {
+
+        cerr << "Erro na linha 3: era esperada uma linha vazia."
+             << endl;
+
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 4. Identificação do modo de execução
+    // --------------------------------------------------------
+
+    if (linhas.size() <= 3) {
+
+        cerr << "Erro: nenhum caso de teste encontrado."
+             << endl;
+
+        return false;
+    }
+
+    bool modoMegaBrain =
+        (linhas[3].find('|') == string::npos);
+
+    int quantidadeLinhas = (int)linhas.size() - 3;
+
+    // --------------------------------------------------------
+    // 5. Validação do modo Mega Brain
+    // --------------------------------------------------------
+
+    if (modoMegaBrain) {
+
+        // O programa original utiliza int para os índices
+        // e operações de deslocamento de bits.
+        if (numVariaveis >= 31) {
+
+            cerr << "Erro: quantidade de variaveis muito grande "
+                 << "para o modo Mega Brain." << endl;
+
+            return false;
+        }
+
+        unsigned long long quantidadeEsperada =
+            1ULL << numVariaveis;
+
+        if (quantidadeLinhas != quantidadeEsperada) {
+
+            cerr << "Erro: quantidade incorreta de linhas "
+                 << "na tabela verdade." << endl;
+
+            cerr << "Esperado: " << quantidadeEsperada
+                 << ", encontrado: " << quantidadeLinhas
+                 << "." << endl;
+
+            return false;
+        }
+
+        // Cada linha deve conter exclusivamente 0 ou 1.
+        for (int i = 3; i < (int)linhas.size(); i++) {
+
+            string resultado = trim(linhas[i]);
+
+            if (resultado != "0" && resultado != "1") {
+
+                cerr << "Erro na linha " << i + 1
+                     << ": resultado da tabela verdade "
+                     << "deve ser exclusivamente 0 ou 1."
+                     << endl;
+
+                return false;
+            }
+        }
+    }
+
+    // --------------------------------------------------------
+    // 6. Validação do modo convencional
+    // --------------------------------------------------------
+
+    else {
+
+        // Compara a quantidade declarada com as linhas existentes.
+        if (quantidadeLinhas != numCasosDeclarados) {
+
+            cerr << "Erro: quantidade incorreta de casos de teste."
+                 << endl;
+
+            cerr << "Declarado: " << numCasosDeclarados
+                 << ", encontrado: " << quantidadeLinhas
+                 << "." << endl;
+
+            return false;
+        }
+
+        // Valida individualmente cada caso.
+        for (int i = 3; i < (int)linhas.size(); i++) {
+
+            if (!validarCaso(linhas[i], numVariaveis, i + 1)) {
+
+                return false;
+            }
+        }
+    }
+
+    cout << "Validacao concluida: arquivo correto!"
+         << endl << endl;
+
+    return true;
+}
 
 
 //função que recebe um numero em string e retorna ele convertido em int
 int string_to_int(string s){
 
-    int num = 0;
-    
-    for(int i = 0 ; i < s.size() ; i++){
-        num = num * 10 + (s[i] - '0');
-    }
- 
+    int num = stoi(s);
+
     return num;
 
 }
@@ -186,8 +607,28 @@ int percorreArvore(cel* no,vector<int> variaveis, unordered_map<char,int> Mvaria
 }
 
 int main(){
-    SetConsoleOutputCP(CP_UTF8); //definindo UTF8 para conseguir alguns caracteres especiais
+    //SetConsoleOutputCP(CP_UTF8); //definindo UTF8 para conseguir alguns caracteres especiais
     
+    //auto start = chrono::high_resolution_clock::now(); //iniciando o relogio
+
+    SetConsoleOutputCP(CP_UTF8);
+
+    // =====================================
+    // ETAPA 0: VALIDAR ENTRADAS
+    // =====================================
+
+    if (!validarArquivo(txt)) {
+
+        cout << endl;
+        cout << "Execucao interrompida devido a erros "
+             << "no arquivo de entrada." << endl;
+
+        return 1;
+    }
+
+    // Início da medição do tempo original.
+    auto start = chrono::high_resolution_clock::now();
+
    
     // ===================================== etapa 1: ler o arquivo de texto e identificar as variaveis =======================
     
@@ -245,7 +686,12 @@ int main(){
 
     cout << endl;
 
+    auto etapa1 = chrono::high_resolution_clock::now(); //finalizando o relogio e mostrando o tempo na tela
 
+    chrono::duration<double> elapsed1 = etapa1 - start;
+  
+    
+    cout << endl;
     //imprimindo o vector (mantem a ordem)
     for (int i = 0 ; i < Vvariaveis.size();i++){
         cout << Vvariaveis[i] << " -> " << i << endl; 
@@ -256,30 +702,36 @@ int main(){
     cout << endl;
 
 
-    // ===================================== etapa 3: construir a arvore da expressão =======================
+    // ===================================== etapa 2: construir a arvore da expressão =======================
     
-  
+    
     cout << endl << "shuttingYard: ";
     queue<char> posFixa;
     posFixa = shuttingYard(expressao);
-
+    
     int tamanhoFila = posFixa.size();
-
+    
     for(int i = 0 ; i < tamanhoFila ; i++){
         cout << posFixa.front() << " ";
         posFixa.push(posFixa.front());
         posFixa.pop();
     }
-
+    
     cout << endl << endl;
     cout << "=========== Árvore formada ==========" << endl << endl;
     arvore* a1 = fazerArvore(posFixa);
-
+    
     imprimir_arvore(a1->raiz);
-
+    
     cout << endl;
+    
+    auto etapa2 = chrono::high_resolution_clock::now(); //finalizando o relogio e mostrando o tempo na tela
 
-    // ===================================== etapa 2: identificar casos de teste e guardá-los em uma estrutura =======================
+    chrono::duration<double> elapsed2 = etapa2 - etapa1;
+  
+
+
+    // ===================================== etapa 3: identificar casos de teste e guardá-los em uma estrutura =======================
     
     int acertos = 0;
     int erros = 0;
@@ -401,6 +853,11 @@ int main(){
 
     }
 
+    auto etapa3 = chrono::high_resolution_clock::now(); //finalizando o relogio e mostrando o tempo na tela
+
+    chrono::duration<double> elapsed3 = etapa3 - etapa2;
+
+
     // ===================================== etapa 4: Mostrar resultados na tela =======================
 
     float porcentagem = (float) acertos/numCasos;
@@ -414,5 +871,21 @@ int main(){
     cout << "porcentagem de acertos: " << porcentagem * 100 << "%" <<  endl << endl;
 
     f.close(); //fechando o arquivo de texto
+
+    auto etapa4 = chrono::high_resolution_clock::now(); //finalizando o relogio e mostrando o tempo na tela
+
+    
+    
+    
+    chrono::duration<double> elapsed4 = etapa4 - etapa3;
+    
+    chrono::duration<double> elapsedTotal = etapa4 - start;
+    cout << fixed << setprecision(3);
+    cout << "Tempo de execução da primeira etapa: " << elapsed1.count() << " s" << endl;
+    cout << "Tempo de execução da segunda etapa: " << elapsed2.count() << " s" << endl;
+    cout << "Tempo de execução da terceira etapa: " << elapsed3.count() << " s" << endl;
+    cout << "Tempo de execução da quarta etapa: " << elapsed4.count() << " s" << endl;
+    cout << "Tempo de execução total: " << elapsedTotal.count() << " s" << endl;
+
     return 0;
 }
